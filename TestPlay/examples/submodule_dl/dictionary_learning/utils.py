@@ -20,12 +20,45 @@ from .dictionary import (
 )
 
 
-def hf_dataset_to_generator(dataset_name, split="train", streaming=True):
-    dataset = load_dataset(dataset_name, split=split, streaming=streaming)
+def hf_dataset_to_generator(
+    dataset_name,
+    split="train",
+    streaming=True,
+    data_source="hf",
+    local_text_path="mini_pile.jsonl",
+):
+    if data_source not in ["hf", "local", "local-cycle"]:
+        raise ValueError("data_source must be one of: hf, local, local-cycle")
+
+    if data_source == "hf":
+        dataset = load_dataset(dataset_name, split=split, streaming=streaming)
+
+        def gen():
+            for x in iter(dataset):
+                if x.get("text") and x["text"].strip():
+                    yield x["text"]
+
+        return gen()
+
+    def gen_local_once():
+        with open(local_text_path, "r", encoding="utf-8") as f:
+            for line in f:
+                data = json.loads(line)
+                if data.get("text") and data["text"].strip():
+                    yield data["text"]
 
     def gen():
-        for x in iter(dataset):
-            yield x["text"]
+        if data_source == "local":
+            yield from gen_local_once()
+            return
+
+        while True:
+            yielded = False
+            for text in gen_local_once():
+                yielded = True
+                yield text
+            if not yielded:
+                raise RuntimeError(f"{local_text_path} has no non-empty text rows")
 
     return gen()
 

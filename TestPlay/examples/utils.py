@@ -81,8 +81,21 @@ def logging_mem_usage(logger):
     cpu_percent = process.cpu_percent(interval=0.1)
     logger.info(f"CPU Mem Used: {cpu_mem_mb} MB ({cpu_percent} %)")
 
-    # GPU usage
-    gpu = GPUtil.getGPUs()[0]
+    # MPS usage on Apple Silicon
+    if torch.backends.mps.is_available():
+        current_mb = torch.mps.current_allocated_memory() / 1024**2
+        driver_mb = torch.mps.driver_allocated_memory() / 1024**2
+        max_mb = torch.mps.recommended_max_memory() / 1024**2
+        logger.info(f"MPS Mem Used: current={current_mb:.2f} MB, driver={driver_mb:.2f} MB, recommended max={max_mb:.2f} MB")
+        return
+
+    # CUDA usage
+    gpus = GPUtil.getGPUs()
+    if not gpus:
+        logger.info("GPU Mem Used: no GPU detected by GPUtil")
+        return
+
+    gpu = gpus[0]
     logger.info(f"GPU Mem Used: {gpu.memoryUsed} MB / {gpu.memoryTotal} MB")
 
 # Tqdm to Logger class

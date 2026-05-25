@@ -131,13 +131,11 @@ class ActivationBuffer:
                         hidden_states = self.submodule.inputs[0].save()
                     else:
                         hidden_states = self.submodule.output.save()
-                    input = self.model.inputs.save()
-
-                    self.submodule.output.stop()
-            attn_mask = input.value[1]["attention_mask"]
-            hidden_states = hidden_states.value
+            if hasattr(hidden_states, "value"):
+                hidden_states = hidden_states.value
             if isinstance(hidden_states, tuple):
                 hidden_states = hidden_states[0]
+            attn_mask = tokens["attention_mask"].to(hidden_states.device)
             if self.remove_bos:
                 hidden_states = hidden_states[:, 1:, :]
                 attn_mask = attn_mask[:, 1:]
@@ -227,7 +225,8 @@ class HeadActivationBuffer:
 
             # return a batch
             unreads = (~self.read).nonzero().squeeze()
-            idxs = unreads[t.randperm(len(unreads), device=unreads.device)[:self.out_batch_size]]
+            # idxs = unreads[t.randperm(len(unreads), device=unreads.device)[:self.out_batch_size]]
+            idxs = unreads[:self.out_batch_size]
             self.read[idxs] = True
             return self.activations[idxs]
     
@@ -372,7 +371,8 @@ class NNsightActivationBuffer:
 
             # return a batch
             unreads = (~self.read).nonzero().squeeze()
-            idxs = unreads[t.randperm(len(unreads), device=unreads.device)[: self.out_batch_size]]
+            # idxs = unreads[t.randperm(len(unreads), device=unreads.device)[: self.out_batch_size]]
+            idxs = unreads[:self.out_batch_size]
             self.read[idxs] = True
             return self.activations[idxs]
 
