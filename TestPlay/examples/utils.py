@@ -87,9 +87,19 @@ def logging_mem_usage(logger):
         driver_mb = torch.mps.driver_allocated_memory() / 1024**2
         max_mb = torch.mps.recommended_max_memory() / 1024**2
         logger.info(f"MPS Mem Used: current={current_mb:.2f} MB, driver={driver_mb:.2f} MB, recommended max={max_mb:.2f} MB")
+
+    # CUDA usage from PyTorch. This is more reliable than GPUtil inside some envs.
+    if torch.cuda.is_available():
+        device_idx = torch.cuda.current_device()
+        allocated_mb = torch.cuda.memory_allocated(device_idx) / 1024**2
+        reserved_mb = torch.cuda.memory_reserved(device_idx) / 1024**2
+        total_mb = torch.cuda.get_device_properties(device_idx).total_memory / 1024**2
+        logger.info(
+            f"CUDA Mem Used: allocated={allocated_mb:.2f} MB, reserved={reserved_mb:.2f} MB, total={total_mb:.2f} MB"
+        )
         return
 
-    # CUDA usage
+    # Fallback GPU usage from GPUtil, mostly useful when PyTorch CUDA is unavailable.
     gpus = GPUtil.getGPUs()
     if not gpus:
         logger.info("GPU Mem Used: no GPU detected by GPUtil")

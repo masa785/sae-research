@@ -97,8 +97,28 @@ def save_model_checkpoint(model, model_save_path):
     }
     torch.save(state_dict, model_save_path)
     del state_dict
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
     if torch.backends.mps.is_available():
         torch.mps.empty_cache()
+
+def resolve_device(device_name, logger, purpose):
+    if device_name == "auto":
+        if torch.cuda.is_available():
+            return torch.device("cuda")
+        if torch.backends.mps.is_available():
+            return torch.device("mps")
+        return torch.device("cpu")
+
+    if device_name == "cuda" and not torch.cuda.is_available():
+        logger.warning("CUDA was requested for %s but is not available. Falling back to CPU.", purpose)
+        return torch.device("cpu")
+
+    if device_name == "mps" and not torch.backends.mps.is_available():
+        logger.warning("MPS was requested for %s but is not available. Falling back to CPU.", purpose)
+        return torch.device("cpu")
+
+    return torch.device(device_name)
 
 def get_acts_buffer(model_name,
                     text,
@@ -324,9 +344,9 @@ def main():
     parser.add_argument('--lr', default=0.01, type=float)
     parser.add_argument('--wd', default=1e-4, type=float)
     parser.add_argument('--optimizer', default='adam', type=str, choices=['adam', 'sgd'])
-    parser.add_argument('--device', default='mps', type=str, choices=['mps', 'cpu', 'auto'])
-    parser.add_argument('--buffer-device', default='cpu', type=str, choices=['cpu', 'mps'], help='device used to store ActivationBuffer activations')
-    parser.add_argument('--llm-device', default='cpu', type=str, choices=['cpu', 'mps'], help='device used by nnsight/LanguageModel when extracting activations')
+    parser.add_argument('--device', default='mps', type=str, choices=['mps', 'cuda', 'cpu', 'auto'])
+    parser.add_argument('--buffer-device', default='cpu', type=str, choices=['cpu', 'mps', 'cuda', 'auto'], help='device used to store ActivationBuffer activations')
+    parser.add_argument('--llm-device', default='cpu', type=str, choices=['cpu', 'mps', 'cuda', 'auto'], help='device used by nnsight/LanguageModel when extracting activations')
     parser.add_argument('--model-dtype', default='float32', type=str, choices=['float32', 'float16', 'bfloat16'])
     
     # Model configs
@@ -396,18 +416,13 @@ def main():
         hugging_face_login(token=args.hgf_token)
 
     # Set device and random seed
-    if args.device == "auto":
-        device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
-    elif args.device == "mps" and not torch.backends.mps.is_available():
-        logger.warning("MPS was requested but is not available. Falling back to CPU.")
-        device = torch.device("cpu")
-    else:
-        device = torch.device(args.device)
-    buffer_device = torch.device(args.buffer_device)
+    device = resolve_device(args.device, logger, "training")
+    buffer_device = resolve_device(args.buffer_device, logger, "activation buffer")
+    llm_device = str(resolve_device(args.llm_device, logger, "LLM activation extraction"))
     model_dtype = get_torch_dtype(args.model_dtype)
     logger.info('Using device for training: %s', device)
     logger.info('Using device for activation buffer: %s', buffer_device)
-    logger.info('Using device for LLM activation extraction: %s', args.llm_device)
+    logger.info('Using device for LLM activation extraction: %s', llm_device)
     logger.info('Using model dtype: %s', model_dtype)
     logger.info('Using data source: %s', args.data_source)
     
@@ -426,7 +441,7 @@ def main():
                                                 refresh_batch_size=args.refresh_batch_size,
                                                 data_source=args.data_source,
                                                 local_text_path=args.local_text_path,
-                                                llm_device=args.llm_device)
+                                                llm_device=llm_device)
     logger.info('Total n_tokens to train on: {:d}M, n_refresh: {:d} of the activation buffer with each buffer of {:.2f}M tokens'.format(
         (args.total_tokens // 1_000_000), 
         (args.total_tokens // args.buffer_size),
@@ -458,7 +473,7 @@ def main():
     if device.type == "mps" and args.optimizer == "adam":
         logger.warning(
             "Adam keeps two optimizer-state tensors per parameter. If MPS runs out of memory, "
-            "try --optimizer sgd, lower --z-dim/--tau, or use --device cpu."
+            "try --optimizer sgd, lower --z-dim/--tau, or use --device cpu/cuda."
         )
     optimizer = build_optimizer(args, model)
     
