@@ -111,14 +111,30 @@ def resolve_device(device_name, logger, purpose):
         return torch.device("cpu")
 
     if device_name == "cuda" and not torch.cuda.is_available():
-        logger.warning("CUDA was requested for %s but is not available. Falling back to CPU.", purpose)
-        return torch.device("cpu")
+        raise RuntimeError(
+            "CUDA was requested for "
+            f"{purpose}, but PyTorch cannot use CUDA in this environment. "
+            f"torch.version.cuda={torch.version.cuda!r}, torch.cuda.is_available()={torch.cuda.is_available()}. "
+            "Install a CUDA-enabled PyTorch build, then rerun. On Windows with uv, for example: "
+            "uv pip uninstall torch torchvision torchaudio; "
+            "uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128"
+        )
 
     if device_name == "mps" and not torch.backends.mps.is_available():
         logger.warning("MPS was requested for %s but is not available. Falling back to CPU.", purpose)
         return torch.device("cpu")
 
     return torch.device(device_name)
+
+def log_torch_runtime(logger):
+    logger.info("PyTorch version: %s", torch.__version__)
+    logger.info("PyTorch CUDA build: %s", torch.version.cuda)
+    logger.info("CUDA available: %s", torch.cuda.is_available())
+    if torch.cuda.is_available():
+        logger.info("CUDA device count: %s", torch.cuda.device_count())
+        logger.info("CUDA current device: %s", torch.cuda.current_device())
+        logger.info("CUDA device name: %s", torch.cuda.get_device_name(torch.cuda.current_device()))
+    logger.info("MPS available: %s", torch.backends.mps.is_available())
 
 def get_acts_buffer(model_name,
                     text,
@@ -416,6 +432,7 @@ def main():
         hugging_face_login(token=args.hgf_token)
 
     # Set device and random seed
+    log_torch_runtime(logger)
     device = resolve_device(args.device, logger, "training")
     buffer_device = resolve_device(args.buffer_device, logger, "activation buffer")
     llm_device = str(resolve_device(args.llm_device, logger, "LLM activation extraction"))
