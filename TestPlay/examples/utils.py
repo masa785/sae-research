@@ -1,6 +1,7 @@
 import os
 import io
 import sys
+import hashlib
 import random
 import numpy as np
 import torch
@@ -10,6 +11,21 @@ import logging
 import matplotlib.pyplot as plt
 
 from torch.utils.data import DataLoader, TensorDataset, IterableDataset
+
+
+def compact_path_part(value):
+    return str(value).replace("/", "-").replace("\\", "-").replace(":", "-")
+
+
+def compact_config_name(args, config_name_keys):
+    full_name = "_".join(f"{key}_{getattr(args, key)}" for key in config_name_keys)
+    short_name = (
+        f"z{args.z_dim}_tok{args.total_tokens}_buf{args.buffer_size}_"
+        f"L{args.layer}_tau{args.tau}_topk{args.topk}_"
+        f"obr{args.out_batch_ratio}_lr{args.lr}_seed{args.seed}"
+    )
+    digest = hashlib.sha1(full_name.encode("utf-8")).hexdigest()[:10]
+    return f"{short_name}_h{digest}", full_name
 
 
 def set_seed(seed):
@@ -30,10 +46,13 @@ def set_seed(seed):
 
 def setup_logging(args, config_name_keys):
     # Prepare model saving directory
-    log_model_save_prefix = os.path.join(args.results_dir, '{:s}/{:s}/{:s}'.format(args.model_name.replace('/', '-'), 
-                                                                                    args.context.replace('/', '-'), 
-                                                                                    args.text.replace('/', '-')))
-    config_name = "_".join(f"{key}_{getattr(args, key)}" for key in config_name_keys)
+    log_model_save_prefix = os.path.join(
+        args.results_dir,
+        compact_path_part(args.model_name),
+        compact_path_part(args.context),
+        compact_path_part(args.text),
+    )
+    config_name, full_config_name = compact_config_name(args, config_name_keys)
     
     log_model_save_dir = os.path.join(log_model_save_prefix, config_name)
     os.makedirs(log_model_save_dir, exist_ok=True)
@@ -71,6 +90,8 @@ def setup_logging(args, config_name_keys):
 
     # First log
     logger.info("Logging to: {:s}".format(log_path))
+    logger.info("Compact config dir: %s", config_name)
+    logger.info("Full config name: %s", full_config_name)
 
     return logger, log_path, loss_path, model_save_dir
 
