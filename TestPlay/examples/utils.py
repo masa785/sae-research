@@ -62,8 +62,8 @@ def setup_logging(args, config_name_keys):
     os.makedirs(model_save_dir, exist_ok=True)
     assert os.path.exists(model_save_dir) 
 
-    log_path = os.path.join(log_model_save_dir, os.path.basename(log_model_save_dir)+'_log.output')
-    loss_path = os.path.join(log_model_save_dir, os.path.basename(log_model_save_dir)+'_loss.json')
+    log_path = os.path.join(log_model_save_dir, "train_log.output")
+    loss_path = os.path.join(log_model_save_dir, "loss.json")
 
     # Create logger
     logger = logging.getLogger()
